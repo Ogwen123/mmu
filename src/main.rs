@@ -1,27 +1,14 @@
 mod utils;
 
-use std::env;
+use std::{env, format};
+use regex::Regex;
+use reqwest;
 use std::fs;
 use std::path::Path;
-use std::ops::Deref;
-use serde::{Deserialize, Serialize};
-use crate::utils::logger::{fatal, info, warning};
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct Mod {
-    name: String,
-    download_link: String
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct ModGroup {
-    name: String,
-    mods: Vec<Mod>,
-    location: String
-}
-#[derive(Serialize, Deserialize)]
-struct MMUConfig {
-    mods: Vec<ModGroup>
-}
+use reqwest::header::USER_AGENT;
+use serde_json::{from_str};
+use crate::utils::logger::{fatal, warning};
+use crate::utils::types::{MMUConfig, ModGroup, Mod, APIResult, ReleaseData};
 
 fn load_config() -> MMUConfig {
     let binding = fs::read_to_string("./mmu_config.json")
@@ -31,6 +18,47 @@ fn load_config() -> MMUConfig {
     let data: MMUConfig = serde_json::from_str(contents).unwrap();
 
     data
+}
+
+fn build_github_url(url: String) -> String {
+    // check the link is the correct format
+    let re = Regex::new(r"https://github.com/[a-zA-Z]+/[a-zA-Z]+").unwrap();
+    let is_valid = re.find(&url).unwrap();
+
+    if is_valid.len() != url.len() {
+        warning!("'{}' is not a valid url, you should provide links to github repos.", url);
+        return "".to_string()
+    }
+
+    let split_url: Vec<&str> = url.split("/").collect();
+
+    let repo_id = split_url[split_url.len() - 2].to_owned() + "/" + split_url[split_url.len() - 1]; // have to add a &str to a String not a &str to a &str apparently
+
+    format!("https://api.github.com/repos/{}/releases/latest", repo_id)
+}
+
+fn get_download_link(api_url: String, mod_data: &Mod) -> Result<ReleaseData, String> {
+    let client = reqwest::blocking::Client::new();
+    let res = client.get(api_url)
+        .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0")
+        .send()
+        .unwrap()
+        .text()
+        .unwrap();
+
+    let res_json: APIResult = from_str::<APIResult>(res.as_str())
+        .unwrap();
+
+    for release in res_json.assets.iter().cloned() {
+        let split_name: Vec<&str> = mod_data.pattern.split("*").collect();
+
+
+        if release.name.starts_with(split_name[0]) && release.name.ends_with(split_name[1]) {
+            return Ok(release);
+        }
+    }
+
+    Err(format!("Skipping {}: Could not a file in the latest release that matches the pattern.", mod_data.name))
 }
 
 fn search(mods: &MMUConfig, term: String) -> Result<ModGroup, String> {
@@ -59,7 +87,27 @@ fn update(mod_group: &ModGroup) {
         return
     }
 
-    // loop through each mod in the list and delete the old mods and download the new one to replace it
+
+    for m in mod_group.mods.iter() {
+        let link = build_github_url(m.clone().download_link);
+
+        if link.len() == 0 {return}
+
+        let release_data_res = get_download_link(link, m);
+
+        let release_data = match release_data_res {
+            Ok(res) => res,
+            Err(message) => {
+                warning!("{}", message);
+                continue
+            }
+        };
+
+        println!("{:?}", release_data.browser_download_url);
+
+        break
+    }
+
 }
 
 fn main() {
