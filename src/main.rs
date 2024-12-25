@@ -1,7 +1,7 @@
 mod utils;
 
 use std::{env, format, io};
-use regex::Regex;
+use regex::{Match, Regex};
 use reqwest;
 use std::fs;
 use std::fs::{remove_file, File};
@@ -23,8 +23,16 @@ fn load_config() -> MMUConfig {
 
 fn build_github_url(url: String) -> String {
     // check the link is the correct format
-    let re = Regex::new(r"https://github.com/[a-zA-Z]+/[a-zA-Z]+").unwrap();
-    let is_valid = re.find(&url).unwrap();
+    let re = Regex::new(r"https://github.com/[a-zA-Z-]+/[a-zA-Z-]+").unwrap();
+    let is_valid_res = re.find(&url);
+
+    let is_valid = match is_valid_res {
+        Some(res) => res,
+        None => {
+            warning!("Could not match regex for {}", url);
+            return "".to_string()
+        }
+    };
 
     if is_valid.len() != url.len() {
         warning!("'{}' is not a valid url, you should provide links to github repos.", url);
@@ -169,7 +177,6 @@ fn update(mod_group: &ModGroup) {
         io::copy(&mut res.as_bytes(), &mut out).expect(format!("Failed to write data to the new file for {}", m.name).as_str());
 
         success!("Updated {}", m.name);
-        break
     }
 
 }
