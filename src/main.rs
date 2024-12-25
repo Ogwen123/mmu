@@ -1,7 +1,6 @@
 mod utils;
 
 use std::{env, format, io};
-use std::fmt::format;
 use regex::Regex;
 use reqwest;
 use std::fs;
@@ -17,7 +16,7 @@ fn load_config() -> MMUConfig {
         .expect("Should have been able to read the file");
     let contents = binding.as_str();
 
-    let data: MMUConfig = serde_json::from_str(contents).unwrap();
+    let data: MMUConfig = from_str(contents).unwrap();
 
     data
 }
@@ -115,12 +114,25 @@ fn update(mod_group: &ModGroup) {
 
         // download the new file
         let client = reqwest::blocking::Client::new();
-        let mut res = client.get(&release_data.browser_download_url)
+        let send_res = client.get(&release_data.browser_download_url)
             .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0")
-            .send()
-            .unwrap()
-            .text()
-            .unwrap();
+            .send();
+
+        let text_res = match send_res {
+            Ok(res) => res.text(),
+            Err(_) => {
+                warning!("Failed to download {}, moving to next mod.", m.name);
+                continue
+            }
+        };
+
+        let mut res = match text_res {
+            Ok(res) => res,
+            Err(_) => {
+                warning!("Failed to parse download result for {}, moving to next mod.", m.name);
+                continue
+            }
+        };
 
         // delete the old file
         let paths = fs::read_dir(&mod_group.location).unwrap();
