@@ -1,13 +1,15 @@
 mod utils;
 
-use std::{env, format};
+use std::{env, format, io};
+use std::fmt::format;
 use regex::Regex;
 use reqwest;
 use std::fs;
+use std::fs::{remove_file, File};
 use std::path::Path;
 use reqwest::header::USER_AGENT;
 use serde_json::{from_str};
-use crate::utils::logger::{fatal, warning};
+use crate::utils::logger::{fatal, info, success, warning};
 use crate::utils::types::{MMUConfig, ModGroup, Mod, APIResult, ReleaseData};
 
 fn load_config() -> MMUConfig {
@@ -76,11 +78,10 @@ fn search(mods: &MMUConfig, term: String) -> Result<ModGroup, String> {
 }
 
 fn install(mod_group: &ModGroup) {
-
+    warning!("doesn't do anything yet")
 }
 
 fn update(mod_group: &ModGroup) {
-    println!("{:?}", mod_group);
     // check the mod path exists
     if Path::new(mod_group.location.as_str()).exists() == false {
         warning!("The location found in the config file does not exist.");
@@ -103,8 +104,59 @@ fn update(mod_group: &ModGroup) {
             }
         };
 
-        println!("{:?}", release_data.browser_download_url);
+        let split_url: Vec<&str> = release_data.browser_download_url.split("/").collect();
+        let file_name = split_url[split_url.len() - 1];
 
+        // check that the current file is not already the latest version
+        if Path::new(format!("{}\\{}", mod_group.location, file_name).as_str()).exists() == true {
+            info!("{} is already on the latest version.", m.name);
+            continue
+        }
+
+        // download the new file
+        let client = reqwest::blocking::Client::new();
+        let mut res = client.get(&release_data.browser_download_url)
+            .header(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0")
+            .send()
+            .unwrap()
+            .text()
+            .unwrap();
+
+        // delete the old file
+        let paths = fs::read_dir(&mod_group.location).unwrap();
+
+        let split_pattern: Vec<&str> = m.pattern.split("*").collect();
+
+        let mut done = false;
+
+        for p in paths {
+            let path = p.unwrap().path();
+            let split_name: Vec<&str> = path
+                .to_str()
+                .unwrap()
+                .split("\\")
+                .collect();
+
+            let name = split_name[split_name.len() - 1];
+
+            if name.starts_with(split_pattern[0]) && name.ends_with(split_pattern[1]) {
+                remove_file(format!("{}\\{}", mod_group.location, name)).expect(format!("Could not delete old {} file", m.name).as_str());
+                done = true;
+                break
+            }
+        }
+
+        if done == false {
+            warning!("Did not find old {} file to delete.", m.name)
+        }
+
+        // save the new file
+        let mut out = File::create(format!("{}\\{}", &mod_group.location, file_name))
+            .expect(format!("Failed to create the new file for {}", m.name).as_str());
+
+        io::copy(&mut res.as_bytes(), &mut out).expect(format!("Failed to write data to the new file for {}", m.name).as_str());
+
+        success!("Updated {}", m.name);
         break
     }
 
