@@ -1,10 +1,11 @@
 mod utils;
 
 use std::{env, format, io};
-use regex::{Match, Regex};
+use regex::{Regex};
 use reqwest;
 use std::fs;
-use std::fs::{remove_file, File};
+use std::fs::{remove_file, File, metadata};
+use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 use reqwest::header::USER_AGENT;
 use serde_json::{from_str};
@@ -84,10 +85,6 @@ fn search(mods: &MMUConfig, term: String) -> Result<ModGroup, String> {
     if found {Ok(res)} else {Err(format!("Could not find '{}'", term))}
 }
 
-fn install(mod_group: &ModGroup) {
-    warning!("doesn't do anything yet")
-}
-
 fn update(mod_group: &ModGroup) {
     // check the mod path exists
     if Path::new(mod_group.location.as_str()).exists() == false {
@@ -127,7 +124,7 @@ fn update(mod_group: &ModGroup) {
             .send();
 
         let text_res = match send_res {
-            Ok(res) => res.text(),
+            Ok(res) => res.bytes(),
             Err(_) => {
                 warning!("Failed to download {}, moving to next mod.", m.name);
                 continue
@@ -141,7 +138,6 @@ fn update(mod_group: &ModGroup) {
                 continue
             }
         };
-
         // delete the old file
         let paths = fs::read_dir(&mod_group.location).unwrap();
 
@@ -151,16 +147,18 @@ fn update(mod_group: &ModGroup) {
 
         for p in paths {
             let path = p.unwrap().path();
-            let split_name: Vec<&str> = path
+            let path_string = path
                 .to_str()
-                .unwrap()
+                .unwrap();
+
+            let split_name: Vec<&str> = path_string
                 .split("\\")
                 .collect();
 
-            let name = split_name[split_name.len() - 1];
+            let old_file_name = split_name[split_name.len() - 1];
 
-            if name.starts_with(split_pattern[0]) && name.ends_with(split_pattern[1]) {
-                remove_file(format!("{}\\{}", mod_group.location, name)).expect(format!("Could not delete old {} file", m.name).as_str());
+            if old_file_name.starts_with(split_pattern[0]) && old_file_name.ends_with(split_pattern[1]) {
+                remove_file(format!("{}\\{}", mod_group.location, old_file_name)).expect(format!("Could not delete old {} file", m.name).as_str());
                 done = true;
                 break
             }
@@ -174,7 +172,7 @@ fn update(mod_group: &ModGroup) {
         let mut out = File::create(format!("{}\\{}", &mod_group.location, file_name))
             .expect(format!("Failed to create the new file for {}", m.name).as_str());
 
-        io::copy(&mut res.as_bytes(), &mut out).expect(format!("Failed to write data to the new file for {}", m.name).as_str());
+        io::copy(&mut &res[..], &mut out).expect(format!("Failed to write data to the new file for {}", m.name).as_str());
 
         success!("Updated {}", m.name);
     }
@@ -182,22 +180,14 @@ fn update(mod_group: &ModGroup) {
 }
 
 fn main() {
-    // consts
-    const VALID_PRIMARY_ARGS: [&str; 2] = ["update", "install"];
-
     let args: Vec<String> = env::args().collect();
 
     let mods: MMUConfig = load_config();
 
-    if args.len() == 3 {
+    if args.len() == 2 {
         // search for given mod group
 
-        if !VALID_PRIMARY_ARGS.contains(&&*args[1]) {
-            fatal!("Invalid arguments.");
-            return
-        }
-
-        let mod_group_result = search(&mods, args[2].clone());
+        let mod_group_result = search(&mods, args[1].clone());
 
         let mod_group = match mod_group_result {
             Ok(res) => res,
@@ -207,13 +197,7 @@ fn main() {
             }
         };
 
-        match args[1].as_str() {
-            "install" => install(&mod_group),
-            "update" => update(&mod_group),
-            _ => {
-                fatal!("Invalid arguments, THIS SHOULD HAVE BEEN CAUGHT EARLIER.")
-            }
-        }
+        update(&mod_group)
 
     } else {
         fatal!("You did not provide a valid number of arguments!")
