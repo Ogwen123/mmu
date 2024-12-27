@@ -4,7 +4,7 @@ use std::{env, format, io};
 use regex::{Regex};
 use reqwest;
 use std::fs;
-use std::fs::{remove_file, File, metadata};
+use std::fs::{remove_file, File};
 use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 use reqwest::header::USER_AGENT;
