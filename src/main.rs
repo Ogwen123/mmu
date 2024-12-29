@@ -1,19 +1,35 @@
 mod utils;
 
 use std::{env, format, io};
+use std::env::current_exe;
 use regex::{Regex};
 use reqwest;
 use std::fs;
 use std::fs::{remove_file, File};
-use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 use reqwest::header::USER_AGENT;
 use serde_json::{from_str};
 use crate::utils::logger::{fatal, info, success, warning};
-use crate::utils::types::{MMUConfig, ModGroup, Mod, APIResult, ReleaseData};
+use crate::utils::types::{MMUConfig, ModGroup, Mod, APIResult, ReleaseData, ParsedPath};
+
+fn parse_path(path: &str) -> ParsedPath {
+    let mut split_path: Vec<&str> = path.split("\\").collect();
+    let file_name = split_path[split_path.len() - 1];
+    split_path.truncate(split_path.len() - 1);
+
+    ParsedPath {
+        path: split_path.join("\\"),
+        file_name: file_name.to_string()
+    }
+}
 
 fn load_config() -> MMUConfig {
-    let binding = fs::read_to_string("./mmu_config.json")
+    let folder_path_buf = current_exe().unwrap();
+    let folder_path = folder_path_buf.to_str().unwrap();
+
+    let path = parse_path(folder_path).path;
+
+    let binding = fs::read_to_string(format!("{}\\mmu_config.json", path))
         .expect("Should have been able to read the file");
     let contents = binding.as_str();
 
@@ -108,8 +124,7 @@ fn update(mod_group: &ModGroup) {
             }
         };
 
-        let split_url: Vec<&str> = release_data.browser_download_url.split("/").collect();
-        let file_name = split_url[split_url.len() - 1];
+        let file_name = parse_path(&release_data.browser_download_url).path;
 
         // check that the current file is not already the latest version
         if Path::new(format!("{}\\{}", mod_group.location, file_name).as_str()).exists() == true {

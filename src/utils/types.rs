@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+pub struct ParsedPath {
+    pub path: String,
+    pub file_name: String
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Mod {
     pub name: String,
